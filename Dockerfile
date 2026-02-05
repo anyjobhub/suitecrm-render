@@ -4,39 +4,42 @@ FROM php:8.1-apache
 RUN apt-get update && apt-get install -y \
     git unzip zip libzip-dev \
     libfreetype6-dev libjpeg62-turbo-dev libpng-dev \
-    libldap2-dev libicu-dev libssl-dev \
-    libkrb5-dev uw-imap-dev \
+    libldap2-dev libicu-dev libssl-dev libkrb5-dev \
+    libonig-dev autoconf pkg-config \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-configure imap --with-kerberos --with-imap-ssl \
-    && docker-php-ext-install gd mysqli pdo pdo_mysql zip ldap intl soap imap \
+    && docker-php-ext-install gd mysqli pdo pdo_mysql zip ldap intl soap \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Enable Apache Rewrite
+# Install IMAP from PECL (Debian 12 compatible)
+RUN pecl install imap \
+    && echo "extension=imap.so" > /usr/local/etc/php/conf.d/imap.ini
+
+# Enable Apache rewrite
 RUN a2enmod rewrite
 
-# Set correct document root for SuiteCRM 8
+# Set SuiteCRM document root
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
 RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' \
     /etc/apache2/sites-available/*.conf /etc/apache2/conf-available/*.conf
 
-# Custom PHP settings
+# PHP custom settings
 RUN echo "upload_max_filesize = 20M" > /usr/local/etc/php/conf.d/suitecrm.ini \
  && echo "post_max_size = 20M" >> /usr/local/etc/php/conf.d/suitecrm.ini \
  && echo "memory_limit = 512M" >> /usr/local/etc/php/conf.d/suitecrm.ini \
- && echo "max_execution_time = 300" >> /usr/local/etc/php/conf.d/suitecrm.ini \
- && echo "date.timezone = UTC" >> /usr/local/etc/php/conf.d/suitecrm.ini
+ && echo "max_execution_time = 300" >> /usr/local/etc/php/conf.d/suitecrm.ini
 
-# Install Composer
+# Install composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# Copy SuiteCRM application
+# Copy SuiteCRM
 COPY . /var/www/html/
 
-# Install composer dependencies
 WORKDIR /var/www/html
+
+# Composer install
 RUN COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader
 
-# Fix permissions
+# Permissions
 RUN chown -R www-data:www-data /var/www/html \
  && chmod -R 755 /var/www/html
 
